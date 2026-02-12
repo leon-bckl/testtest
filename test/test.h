@@ -1,15 +1,21 @@
 #pragma once
 
 #include <algorithm>
+#include <concepts>
 #include <cstdlib>
 #include <exception>
+#include <format>
 #include <functional>
 #include <iostream>
 #include <memory>
 #include <source_location>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <type_traits>
+#include <typeinfo>
+#include <utility>
 #include <vector>
 
 namespace test{
@@ -42,19 +48,104 @@ inline void check(bool condition, std::string_view message = "Check failed", std
 		fail(message, location);
 }
 
-template<typename A, typename B>
-void compare(A&& actual, B&& expected, std::source_location location = std::source_location::current())
+template<typename T>
+auto toString(const T&) -> std::string
 {
-	check(actual == expected, "Comparison failed", location);
+	return '<' + std::string(typeid(T).name()) + '>';
+}
+
+template<typename T>
+requires std::integral<T> || std::floating_point<T>
+auto toString(const T& value) -> std::string
+{
+	return std::to_string(value);
+}
+
+inline auto toString(std::string_view str) -> std::string
+{
+	return '"' + std::string(str) + '"';
+}
+
+inline auto toString(const std::string& str) -> std::string
+{
+	return toString(std::string_view(str));
+}
+
+template<typename T>
+auto toString(const std::span<const T>& span) -> std::string
+{
+	auto result = std::string("{");
+
+	const auto size = span.size();
+	for(auto i = 0ul; i < size; ++i)
+	{
+		result += toString(span[i]);
+
+		if(i != size - 1)
+			result += ',';
+	}
+
+	result += '}';
+
+	return result;
+}
+
+template<typename T>
+requires std::is_enum_v<T>
+auto toString(const T& enumValue) -> std::string
+{
+	return "(enum)" + std::to_string(static_cast<std::underlying_type_t<T>>(enumValue));
+}
+
+template<typename A, typename B = A>
+struct Comparator{
+	auto operator()(const A& a, const B& b) const -> bool
+	{
+		return a == b;
+	}
+};
+
+template<typename A, typename B, typename Comp = Comparator<A, B>>
+requires (!std::ranges::range<A> || !std::ranges::range<B>) || std::convertible_to<const A, std::string_view>
+void compare(A&& actual, B&& expected, Comp&& comp = Comp{}, std::source_location location = std::source_location::current())
+{
+	check(
+		comp(actual, expected),
+		"Comparison failed - actual: " + toString(actual) + ", expected: " + toString(expected),
+		location);
+}
+
+template<typename A, typename B, typename Comp = Comparator<std::ranges::range_value_t<A>, std::ranges::range_value_t<B>>>
+requires std::ranges::range<A> && std::ranges::range<B> && (!std::convertible_to<const A, std::string_view>)
+void compare(A&& actual, B&& expected, Comp&& comp = Comp{}, std::source_location location = std::source_location::current())
+{
+	const auto actualSize   = std::ranges::size(actual);
+	const auto expectedSize = std::ranges::size(expected);
+
+	check(actualSize == expectedSize,
+	      std::format("size mismatch - actual: {}, expected: {}", actualSize, expectedSize),
+	      location);
+
+	auto aIt = std::ranges::begin(actual);
+	auto bIt = std::ranges::begin(expected);
+
+	for(std::size_t i = 0; i < actualSize; ++i, ++aIt, ++bIt)
+	{
+		check(
+			comp(*aIt, *bIt),
+			"Item mismatch at index " + std::to_string(i) +
+				" - actual: " + toString(actual) + ", expected: " + toString(expected),
+			location);
+	}
 }
 
 template<typename Exception, typename F>
-void expectException(F f)
+void expectException(F f, std::source_location location = std::source_location::current())
 {
 	try
 	{
 		f();
-		fail("Expected exception but none was thrown");
+		fail("Expected exception but none was thrown", location);
 	}
 	catch(const TestFailure&)
 	{
@@ -65,9 +156,31 @@ void expectException(F f)
 	}
 	catch(...)
 	{
-		fail("Expected a different exception type");
+		fail("Expected a different exception type", location);
 	}
 }
+
+class TestResults{
+public:
+	TestResults() = default;
+
+	void add(std::string_view testName, bool passed)
+	{
+		if(passed)
+			++m_numPassed;
+		else
+			m_failedTestNames.push_back(testName);
+	}
+
+	auto numPassed() const -> int{ return m_numPassed; }
+	auto numFailed() const -> int{ return static_cast<int>(m_failedTestNames.size()); }
+	auto totalTests() const -> int{ return m_numPassed + numFailed(); }
+	auto failedTestNames() const -> std::span<const std::string_view>{ return m_failedTestNames; }
+
+private:
+	int                           m_numPassed = 0;
+	std::vector<std::string_view> m_failedTestNames;
+};
 
 class ResultLogger{
 public:
@@ -99,69 +212,68 @@ public:
 			std::cerr << "ERROR: " << testName << "::" << testCaseName << " - " << message << std::endl;
 	}
 
+	void logSummary(const TestResults& results)
+	{
+		std::cout << "\nResults: " << results.numPassed() << " passed, " << results.numFailed() << " failed (" << results.totalTests() << " total)" << std::endl;
+	}
+
 private:
 	std::string m_currentTestName;
 };
 
 class TestExecutor{
 public:
-	TestExecutor(std::unique_ptr<ResultLogger> logger)
-		: m_resultLogger{std::move(logger)}
-	{
-	}
+	TestExecutor() = default;
 
-	void execute(std::string_view testName, std::string_view testCaseName, std::function<void()> func)
+	void execute(std::string_view testName, std::string_view testCaseName, std::function<void()> func, ResultLogger& logger)
 	{
-		m_resultLogger->logRunningTest(testName, testCaseName);
+		logger.logRunningTest(testName, testCaseName);
+		auto passed = false;
 
 		try
 		{
 			func();
-			++m_numSucceeded;
+			passed = true;
 		}
 		catch(const TestFailure& e)
 		{
-			++m_numFailed;
-			m_resultLogger->logFailure(testName, testCaseName, e);
+			logger.logFailure(testName, testCaseName, e);
 		}
 		catch(const std::exception& e)
 		{
-			++m_numFailed;
-			m_resultLogger->logError(testName, testCaseName, std::string("Unhandled std::exception: ") + e.what());
+			logger.logError(testName, testCaseName, std::string("Unhandled std::exception: ") + e.what());
 		}
 		catch(...)
 		{
-			++m_numFailed;
-			m_resultLogger->logError(testName, testCaseName, "Unhandled unknown exception");
+			logger.logError(testName, testCaseName, "Unhandled unknown exception");
 		}
+
+		m_results.add(testName, passed);
 	}
 
-	int failedTests() const{ return m_numFailed; }
-	int successfulTests() const{ return m_numSucceeded; }
-	int totalTests() const{ return failedTests() + successfulTests(); }
+	auto results() -> const TestResults&{ return m_results; }
 
 private:
-	std::unique_ptr<ResultLogger> m_resultLogger;
-	int                           m_numFailed    = 0;
-	int                           m_numSucceeded = 0;
+	TestResults m_results;
 };
 
 class TestSuiteInterface{
 public:
 	virtual ~TestSuiteInterface() = default;
-	virtual void executeAll(TestExecutor& executor) const = 0;
-	virtual void executeTestCase(TestExecutor& executor, std::string_view name) const = 0;
+	virtual void executeAll(TestExecutor& executor, ResultLogger& logger) const = 0;
+	virtual void executeTestCase(TestExecutor& executor, std::string_view name, ResultLogger& logger) const = 0;
 };
 using TestSuitePtr = std::unique_ptr<TestSuiteInterface>;
 
 template<typename... Args>
 class TestSuite : public TestSuiteInterface{
 public:
-	using TestFunc = std::function<void(Args...)>;
+	using TestFunc  = std::function<void(Args...)>;
+	using TupleType = std::tuple<std::decay_t<Args>...>;
 
 	struct TestCase{
-		std::string         name;
-		std::tuple<Args...> args;
+		std::string name;
+		TupleType   args;
 	};
 
 	TestSuite(std::string testName, TestFunc testFunc)
@@ -175,7 +287,7 @@ public:
 
 	void addTestCase(std::string name, Args&&... args)
 	{
-		m_testCases.push_back({std::move(name), std::make_tuple(std::forward<Args>(args)...)});
+		m_testCases.push_back({std::move(name), TupleType(std::forward<Args>(args)...)});
 	}
 
 	void addTestCases(std::initializer_list<TestCase> testCases)
@@ -192,7 +304,7 @@ public:
 		return *this;
 	}
 
-	void executeAll(TestExecutor& executor) const override
+	void executeAll(TestExecutor& executor, ResultLogger& logger) const override
 	{
 		if(m_testCases.empty())
 			throw std::logic_error("Test suite '" + m_testName + "' does not have any test cases");
@@ -203,11 +315,12 @@ public:
 				[this, &testCase]()
 				{
 					std::apply(m_testFunc, testCase.args);
-				});
+				},
+				logger);
 		}
 	}
 
-	void executeTestCase(TestExecutor& executor, std::string_view name) const override
+	void executeTestCase(TestExecutor& executor, std::string_view name, ResultLogger& logger) const override
 	{
 		const auto it = std::ranges::find_if(m_testCases, [name=name](const TestCase& t){ return t.name == name; });
 
@@ -218,7 +331,8 @@ public:
 			[this, &testCase=*it]()
 			{
 				std::apply(m_testFunc, testCase.args);
-			});
+			},
+			logger);
 	}
 
 private:
@@ -245,10 +359,18 @@ public:
 			(void)argc;
 			(void)argv;
 
-			auto executor = TestExecutor(std::make_unique<ResultLogger>());
+			auto executor = TestExecutor();
+			auto logger   = ResultLogger();
 
 			for(const auto& test : m_tests)
-				test->executeAll(executor);
+				test->executeAll(executor, logger);
+
+			const auto& results = executor.results();
+
+			logger.logSummary(results);
+
+			if(results.numFailed() > 0)
+				return EXIT_FAILURE;
 		}
 		catch(const std::exception& e)
 		{
