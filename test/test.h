@@ -48,10 +48,25 @@ inline void check(bool condition, std::string_view message = "Check failed", std
 		fail(message, location);
 }
 
-template<typename T>
-auto toString(const T&) -> std::string
+inline auto toString(std::nullptr_t) -> std::string
 {
-	return '<' + std::string(typeid(T).name()) + '>';
+	return "nullptr";
+}
+
+template<typename T>
+auto toString([[maybe_unused]] const T& t) -> std::string
+{
+	if constexpr(std::is_pointer_v<T>)
+	{
+		return std::format("({}*)0x{:x}",
+			typeid(std::remove_pointer_t<T>).name(),
+			reinterpret_cast<std::uintptr_t>(t)
+		);
+	}
+	else
+	{
+		return '<' + std::string(typeid(T).name()) + '>';
+	}
 }
 
 template<typename T>
@@ -265,7 +280,7 @@ public:
 };
 using TestSuitePtr = std::unique_ptr<TestSuiteInterface>;
 
-template<typename... Args>
+template<typename ...Args>
 class TestSuite : public TestSuiteInterface{
 public:
 	using TestFunc  = std::function<void(Args...)>;
