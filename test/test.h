@@ -53,6 +53,16 @@ inline auto toString(std::nullptr_t) -> std::string
 	return "nullptr";
 }
 
+inline auto toString(bool b) -> std::string
+{
+	return b ? "true" : "false";
+}
+
+inline auto toString(const std::type_info& typeInfo) -> std::string
+{
+	return std::format("(type_info){}", typeInfo.name());
+}
+
 template<typename T>
 auto toString([[maybe_unused]] const T& t) -> std::string
 {
