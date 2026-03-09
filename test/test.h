@@ -16,6 +16,7 @@
 #include <type_traits>
 #include <typeinfo>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace test{
@@ -120,6 +121,12 @@ requires std::is_enum_v<T>
 auto toString(const T& enumValue) -> std::string
 {
 	return "(enum)" + std::to_string(static_cast<std::underlying_type_t<T>>(enumValue));
+}
+
+template<typename ...Args>
+auto toString(const std::variant<Args...>& variantValue) -> std::string
+{
+	return std::visit([](const auto& value){ return "(variant)" + toString(value); }, variantValue);
 }
 
 template<typename A, typename B = A>
