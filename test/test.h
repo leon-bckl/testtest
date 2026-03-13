@@ -130,26 +130,24 @@ auto toString(const std::variant<Args...>& variantValue) -> std::string
 }
 
 template<typename A, typename B = A>
-struct Comparator{
-	auto operator()(const A& a, const B& b) const -> bool
-	{
-		return a == b;
-	}
-};
+auto equalTo(const A& a, const B& b) -> bool
+{
+	return a == b;
+}
 
-template<typename A, typename B, typename Comp = Comparator<A, B>>
+template<typename A, typename B>
 requires (!std::ranges::range<A> || !std::ranges::range<B>) || std::convertible_to<const A, std::string_view>
-void compare(A&& actual, B&& expected, Comp&& comp = Comp{}, std::source_location location = std::source_location::current())
+void compare(A&& actual, B&& expected, std::source_location location = std::source_location::current())
 {
 	check(
-		comp(actual, expected),
+		equalTo(actual, expected),
 		"Comparison failed - actual: " + toString(actual) + ", expected: " + toString(expected),
 		location);
 }
 
-template<typename A, typename B, typename Comp = Comparator<std::ranges::range_value_t<A>, std::ranges::range_value_t<B>>>
+template<typename A, typename B>
 requires std::ranges::range<A> && std::ranges::range<B> && (!std::convertible_to<const A, std::string_view>)
-void compare(A&& actual, B&& expected, Comp&& comp = Comp{}, std::source_location location = std::source_location::current())
+void compare(A&& actual, B&& expected, std::source_location location = std::source_location::current())
 {
 	const auto actualSize   = std::ranges::size(actual);
 	const auto expectedSize = std::ranges::size(expected);
@@ -164,9 +162,9 @@ void compare(A&& actual, B&& expected, Comp&& comp = Comp{}, std::source_locatio
 	for(std::size_t i = 0; i < actualSize; ++i, ++aIt, ++bIt)
 	{
 		check(
-			comp(*aIt, *bIt),
+			equalTo(*aIt, *bIt),
 			"Item mismatch at index " + std::to_string(i) +
-				" - actual: " + toString(actual) + ", expected: " + toString(expected),
+				" - actual: " + toString(*aIt) + ", expected: " + toString(*bIt),
 			location);
 	}
 }
@@ -289,6 +287,12 @@ private:
 	TestResults m_results;
 };
 
+template<typename ...Args>
+struct TestCase{
+	std::string                       name;
+	std::tuple<std::decay_t<Args>...> args;
+};
+
 class TestSuiteInterface{
 public:
 	virtual ~TestSuiteInterface() = default;
@@ -301,12 +305,7 @@ template<typename ...Args>
 class TestSuite : public TestSuiteInterface{
 public:
 	using TestFunc  = std::function<void(Args...)>;
-	using TupleType = std::tuple<std::decay_t<Args>...>;
-
-	struct TestCase{
-		std::string name;
-		TupleType   args;
-	};
+	using TestCase  = test::TestCase<std::decay_t<Args>...>;
 
 	TestSuite(std::string testName, TestFunc testFunc)
 		: m_testName{std::move(testName)}
@@ -319,7 +318,7 @@ public:
 
 	void addTestCase(std::string name, Args&&... args)
 	{
-		m_testCases.push_back({std::move(name), TupleType(std::forward<Args>(args)...)});
+		m_testCases.push_back({std::move(name), decltype(TestCase::args)(std::forward<Args>(args)...)});
 	}
 
 	void addTestCases(std::initializer_list<TestCase> testCases)
