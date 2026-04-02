@@ -129,6 +129,12 @@ auto toString(const std::variant<Args...>& variantValue) -> std::string
 	return std::visit([](const auto& value){ return "(variant)" + toString(value); }, variantValue);
 }
 
+template<typename T>
+auto toString(const std::optional<T>& optionalValue) -> std::string
+{
+	return "(optional)" + (optionalValue.has_value() ? toString(*optionalValue) : "null");
+}
+
 template<typename A, typename B = A>
 auto equalTo(const A& a, const B& b) -> bool
 {
