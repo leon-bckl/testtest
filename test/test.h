@@ -4,6 +4,7 @@
 #include <concepts>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <format>
 #include <functional>
 #include <iostream>
@@ -97,6 +98,16 @@ inline auto toString(const std::string& str) -> std::string
 	return toString(std::string_view(str));
 }
 
+inline auto toString(const char* str) -> std::string
+{
+	return toString(std::string_view(str));
+}
+
+inline auto toString(const std::filesystem::path& path) -> std::string
+{
+	return toString(std::string_view(path.string()));
+}
+
 template<typename T>
 auto toString(const std::span<const T>& span) -> std::string
 {
@@ -142,7 +153,9 @@ auto equalTo(const A& a, const B& b) -> bool
 }
 
 template<typename A, typename B>
-requires (!std::ranges::range<A> || !std::ranges::range<B>) || std::convertible_to<const A, std::string_view>
+requires (!std::ranges::range<A> || !std::ranges::range<B>) ||
+         std::convertible_to<const A, std::string_view> ||
+         std::convertible_to<const A, std::filesystem::path>
 void compare(A&& actual, B&& expected, std::source_location location = std::source_location::current())
 {
 	check(
@@ -152,7 +165,10 @@ void compare(A&& actual, B&& expected, std::source_location location = std::sour
 }
 
 template<typename A, typename B>
-requires std::ranges::range<A> && std::ranges::range<B> && (!std::convertible_to<const A, std::string_view>)
+requires std::ranges::range<A> &&
+         std::ranges::range<B> &&
+         (!std::convertible_to<const A, std::string_view>) &&
+         (!std::convertible_to<const A, std::filesystem::path>)
 void compare(A&& actual, B&& expected, std::source_location location = std::source_location::current())
 {
 	const auto actualSize   = std::ranges::size(actual);
@@ -176,7 +192,7 @@ void compare(A&& actual, B&& expected, std::source_location location = std::sour
 }
 
 template<typename Exception, typename F>
-void expectException(F f, std::source_location location = std::source_location::current())
+void expectException(F f, std::string_view what = {}, std::source_location location = std::source_location::current())
 {
 	try
 	{
@@ -187,8 +203,18 @@ void expectException(F f, std::source_location location = std::source_location::
 	{
 		throw;
 	}
-	catch(const Exception&)
+	catch(const Exception& e)
 	{
+		if constexpr(std::derived_from<Exception, std::exception>)
+		{
+			if(!what.empty())
+				compare(e.what(), what, location);
+		}
+		else
+		{
+			(void)e;
+			test::check(what.empty(), "'what' param cannot be used with exception that doesn't derive from std::exception");
+		}
 	}
 	catch(...)
 	{
