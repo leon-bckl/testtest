@@ -44,10 +44,20 @@ inline void fail(std::string_view message, std::source_location location = std::
 	throw TestFailure(std::string(message), location);
 }
 
-inline void check(bool condition, std::string_view message = "Check failed", std::source_location location = std::source_location::current())
+inline void check(bool condition, std::string_view message = {}, std::source_location location = std::source_location::current())
 {
 	if(!condition)
-		fail(message, location);
+	{
+		auto failMessage = std::string("Check failed");
+
+		if(!message.empty())
+		{
+			failMessage += ": ";
+			failMessage += message;
+		}
+
+		fail(failMessage, location);
+	}
 }
 
 inline auto toString(std::nullptr_t) -> std::string
