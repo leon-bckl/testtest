@@ -277,11 +277,6 @@ public:
 				            failure.message()) << std::endl;
 	}
 
-	void logError(std::string_view testName, std::string_view testCaseName, std::string_view message)
-	{
-			std::cerr << "ERROR: " << testName << "::" << testCaseName << " - " << message << std::endl;
-	}
-
 	void logSummary(const TestResults& results)
 	{
 		std::cout << "\nResults: " << results.numPassed() << " passed, " << results.numFailed() << " failed (" << results.totalTests() << " total)" << std::endl;
@@ -295,7 +290,7 @@ class TestExecutor{
 public:
 	TestExecutor() = default;
 
-	void execute(std::string_view testName, std::string_view testCaseName, std::function<void()> func, ResultLogger& logger)
+	void execute(std::string_view testName, std::string_view testCaseName, std::function<void()> func, ResultLogger& logger, std::source_location location)
 	{
 		logger.logRunningTest(testName, testCaseName);
 		auto passed = false;
@@ -311,11 +306,11 @@ public:
 		}
 		catch(const std::exception& e)
 		{
-			logger.logError(testName, testCaseName, std::string("Unhandled std::exception: ") + e.what());
+			logger.logFailure(testName, testCaseName, TestFailure(std::string("Unhandled std::exception: ") + e.what(), location));
 		}
 		catch(...)
 		{
-			logger.logError(testName, testCaseName, "Unhandled unknown exception");
+			logger.logFailure(testName, testCaseName, TestFailure("Unhandled unknown exception", location));
 		}
 
 		m_results.add(testName, passed);
@@ -347,9 +342,10 @@ public:
 	using TestFunc  = std::function<void(Args...)>;
 	using TestCase  = test::TestCase<std::decay_t<Args>...>;
 
-	TestSuite(std::string testName, TestFunc testFunc)
+	TestSuite(std::string testName, TestFunc testFunc, std::source_location location)
 		: m_testName{std::move(testName)}
 		, m_testFunc{std::forward<TestFunc>(testFunc)}
+		, m_location{location}
 	{
 	}
 
@@ -381,7 +377,7 @@ public:
 		{
 			if constexpr(sizeof...(Args) == 0)
 			{
-				executor.execute(m_testName, m_testName, [this](){ m_testFunc(); }, logger);
+				executor.execute(m_testName, m_testName, [this](){ m_testFunc(); }, logger, m_location);
 				return;
 			}
 			else
@@ -397,7 +393,8 @@ public:
 				{
 					std::apply(m_testFunc, testCase.args);
 				},
-				logger);
+				logger,
+				m_location);
 		}
 	}
 
@@ -413,21 +410,23 @@ public:
 			{
 				std::apply(m_testFunc, testCase.args);
 			},
-			logger);
+			logger,
+			m_location);
 	}
 
 private:
 	std::string           m_testName;
 	TestFunc              m_testFunc;
+	std::source_location  m_location;
 	std::vector<TestCase> m_testCases;
 };
 
 class TestApp{
 public:
 	template<typename F>
-	auto& addTest(std::string name, F&& testFunc)
+	auto& addTest(std::string name, F&& testFunc, std::source_location location = std::source_location::current())
 	{
-		auto* testSuite = new TestSuite(std::move(name), std::function(std::forward<F>(testFunc)));
+		auto* testSuite = new TestSuite(std::move(name), std::function(std::forward<F>(testFunc)), location);
 		auto  ptr       = TestSuitePtr(testSuite);
 		m_tests.push_back(std::move(ptr));
 		return *testSuite;
