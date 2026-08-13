@@ -370,7 +370,17 @@ public:
 	void executeAll(TestExecutor& executor, ResultLogger& logger) const override
 	{
 		if(m_testCases.empty())
-			throw std::logic_error("Test suite '" + m_testName + "' does not have any test cases");
+		{
+			if constexpr(sizeof...(Args) == 0)
+			{
+				executor.execute(m_testName, m_testName, [this](){ m_testFunc(); }, logger);
+				return;
+			}
+			else
+			{
+				throw std::logic_error("Test suite '" + m_testName + "' does not have any test cases");
+			}
+		}
 
 		for(const auto& testCase : m_testCases)
 		{
@@ -407,7 +417,7 @@ private:
 class TestApp{
 public:
 	template<typename F>
-	[[nodiscard]] auto& addTest(std::string name, F&& testFunc)
+	auto& addTest(std::string name, F&& testFunc)
 	{
 		auto* testSuite = new TestSuite(std::move(name), std::function(std::forward<F>(testFunc)));
 		auto  ptr       = TestSuitePtr(testSuite);
