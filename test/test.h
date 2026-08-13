@@ -149,7 +149,15 @@ auto toString(const std::optional<T>& optionalValue) -> std::string
 template<typename A, typename B = A>
 auto equalTo(const A& a, const B& b) -> bool
 {
-	return a == b;
+	if constexpr(std::is_integral_v<A> && std::is_integral_v<B>)
+	{
+		using CommonType = std::common_type_t<A, B>;
+		return static_cast<CommonType>(a) == static_cast<CommonType>(b);
+	}
+	else
+	{
+		return a == b;
+	}
 }
 
 template<typename A, typename B>
