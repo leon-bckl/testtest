@@ -176,10 +176,8 @@ requires (!std::ranges::range<A> || !std::ranges::range<B>) ||
          std::convertible_to<const A, std::filesystem::path>
 void compare(A&& actual, B&& expected, std::source_location location = std::source_location::current())
 {
-	check(
-		equalTo(actual, expected),
-		"Comparison failed - actual: " + toString(actual) + ", expected: " + toString(expected),
-		location);
+		if(!equalTo(actual, expected))
+			fail("Comparison failed - actual: " + toString(actual) + ", expected: " + toString(expected), location);
 }
 
 template<typename A, typename B>
@@ -192,20 +190,20 @@ void compare(A&& actual, B&& expected, std::source_location location = std::sour
 	const auto actualSize   = std::ranges::size(actual);
 	const auto expectedSize = std::ranges::size(expected);
 
-	check(actualSize == expectedSize,
-	      std::format("size mismatch - actual: {}, expected: {}", actualSize, expectedSize),
-	      location);
+	if(actualSize != expectedSize)
+		fail(std::format("size mismatch - actual: {}, expected: {}", actualSize, expectedSize), location);
 
 	auto aIt = std::ranges::begin(actual);
 	auto bIt = std::ranges::begin(expected);
 
 	for(std::size_t i = 0; i < actualSize; ++i, ++aIt, ++bIt)
 	{
-		check(
-			equalTo(*aIt, *bIt),
-			"Item mismatch at index " + std::to_string(i) +
-				" - actual: " + toString(*aIt) + ", expected: " + toString(*bIt),
-			location);
+			if(!equalTo(*aIt, *bIt))
+			{
+				fail(std::format("Item mismatch at index {} - actual: {}, expected: {}",
+				                 i, toString(*aIt), toString(*bIt)),
+				     location);
+			}
 	}
 }
 
@@ -231,7 +229,7 @@ void expectException(F f, std::string_view what = {}, std::source_location locat
 		else
 		{
 			(void)e;
-			test::check(what.empty(), "'what' param cannot be used with exception that doesn't derive from std::exception");
+			check(what.empty(), "'what' param cannot be used with exception that doesn't derive from std::exception");
 		}
 	}
 	catch(...)
@@ -475,4 +473,4 @@ private:
 	std::vector<TestSuitePtr> m_tests;
 };
 
-}
+} // namespace test
