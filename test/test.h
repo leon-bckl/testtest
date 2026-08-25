@@ -100,7 +100,55 @@ auto toString(const T& value) -> std::string
 
 inline auto toString(std::string_view str) -> std::string
 {
-	return '"' + std::string(str) + '"';
+	auto result = std::string();
+	result.reserve(str.size() + 2);
+	result += "\"";
+
+	for(const char c : str)
+	{
+		switch(c)
+		{
+		case '\0':
+			result += "\\0";
+			break;
+		case '\a':
+			result += "\\a";
+			break;
+		case '\b':
+			result += "\\b";
+			break;
+		case '\t':
+			result += "\\t";
+			break;
+		case '\n':
+			result += "\\n";
+			break;
+		case '\v':
+			result += "\\v";
+			break;
+		case '\f':
+			result += "\\f";
+			break;
+		case '\r':
+			result += "\\r";
+			break;
+		case '\"':
+			result += "\\\"";
+			break;
+		case '\\':
+			result += "\\\\";
+			break;
+		default:
+			if(static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) >= 0x7F)
+				result += std::format("\\u{:04x}", static_cast<unsigned int>(c));
+			else
+				result += c;
+		}
+	}
+
+	result += '\"';
+
+	return result;
 }
 
 inline auto toString(const std::string& str) -> std::string
