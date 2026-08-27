@@ -98,11 +98,11 @@ auto toString(const T& value) -> std::string
 	return std::to_string(value);
 }
 
-inline auto toString(std::string_view str) -> std::string
+inline auto toString(std::string_view str, char quote = '"') -> std::string
 {
 	auto result = std::string();
 	result.reserve(str.size() + 2);
-	result += "\"";
+	result += quote;
 
 	for(const char c : str)
 	{
@@ -133,7 +133,16 @@ inline auto toString(std::string_view str) -> std::string
 			result += "\\r";
 			break;
 		case '\"':
-			result += "\\\"";
+			if(c == quote)
+				result += "\\\"";
+			else
+				result += c;
+			break;
+		case '\'':
+			if(c == quote)
+				result += "\\'";
+			else
+				result += c;
 			break;
 		case '\\':
 			result += "\\\\";
@@ -146,7 +155,7 @@ inline auto toString(std::string_view str) -> std::string
 		}
 	}
 
-	result += '\"';
+	result += quote;
 
 	return result;
 }
@@ -159,6 +168,11 @@ inline auto toString(const std::string& str) -> std::string
 inline auto toString(const char* str) -> std::string
 {
 	return toString(std::string_view(str));
+}
+
+inline auto toString(char c) -> std::string
+{
+	return toString(std::string_view(&c, 1), '\'');
 }
 
 inline auto toString(const std::filesystem::path& path) -> std::string
@@ -432,25 +446,22 @@ public:
 		if(m_testCases.empty())
 		{
 			if constexpr(sizeof...(Args) == 0)
-			{
 				executor.execute(m_testName, m_testName, [this](){ m_testFunc(); }, logger, m_location);
-				return;
-			}
 			else
-			{
 				throw std::logic_error("Test suite '" + m_testName + "' does not have any test cases");
-			}
 		}
-
-		for(const auto& testCase : m_testCases)
+		else
 		{
-			executor.execute(m_testName, testCase.name,
-				[this, &testCase]()
-				{
-					std::apply(m_testFunc, testCase.args);
-				},
-				logger,
-				m_location);
+			for(const auto& testCase : m_testCases)
+			{
+				executor.execute(m_testName, testCase.name,
+					[this, &testCase]()
+					{
+						std::apply(m_testFunc, testCase.args);
+					},
+					logger,
+					m_location);
+			}
 		}
 	}
 
