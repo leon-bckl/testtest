@@ -270,7 +270,7 @@ void compare(A&& actual, B&& expected, std::source_location location = std::sour
 }
 
 template<typename Exception, typename F>
-void expectException(F f, std::string_view what = {}, std::source_location location = std::source_location::current())
+void expectException(F&& f, std::string_view what = {}, std::source_location location = std::source_location::current())
 {
 	try
 	{
