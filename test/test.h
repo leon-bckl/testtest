@@ -1,7 +1,9 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <concepts>
+#include <condition_variable>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -9,10 +11,12 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <source_location>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <typeinfo>
@@ -21,6 +25,10 @@
 #include <vector>
 
 namespace test{
+
+/*
+ * TestFailure
+ */
 
 class TestFailure{
 public:
@@ -38,11 +46,19 @@ private:
 	std::source_location m_location;
 };
 
+/*
+ * fail
+ */
+
 [[noreturn]]
 inline void fail(std::string_view message, std::source_location location = std::source_location::current())
 {
 	throw TestFailure(std::string(message), location);
 }
+
+/*
+ * check
+ */
 
 inline void check(bool condition, std::string_view message = {}, std::source_location location = std::source_location::current())
 {
@@ -59,6 +75,10 @@ inline void check(bool condition, std::string_view message = {}, std::source_loc
 		fail(failMessage, location);
 	}
 }
+
+/*
+ * toString
+ */
 
 inline auto toString(std::nullptr_t) -> std::string
 {
@@ -212,6 +232,10 @@ auto toString(const std::optional<T>& optionalValue) -> std::string
 	return "(optional)" + (optionalValue.has_value() ? toString(*optionalValue) : "null");
 }
 
+/*
+ * compare
+ */
+
 template<typename A, typename B = A>
 auto equalTo(const A& a, const B& b) -> bool
 {
@@ -263,6 +287,10 @@ void compare(A&& actual, B&& expected, std::source_location location = std::sour
 	}
 }
 
+/*
+ * expectException
+ */
+
 template<typename Exception, typename F>
 void expectException(F&& f, std::string_view what = {}, std::source_location location = std::source_location::current())
 {
@@ -294,6 +322,10 @@ void expectException(F&& f, std::string_view what = {}, std::source_location loc
 	}
 }
 
+/*
+ * TestResults
+ */
+
 class TestResults{
 public:
 	TestResults() = default;
@@ -315,6 +347,10 @@ private:
 	int                           m_numPassed = 0;
 	std::vector<std::string_view> m_failedTestNames;
 };
+
+/*
+ * ResultLogger
+ */
 
 class ResultLogger{
 public:
@@ -350,6 +386,49 @@ private:
 	std::string m_currentTestName;
 };
 
+/*
+ * TimeoutChecker
+ */
+
+class TimeoutChecker{
+public:
+	TimeoutChecker(int timeoutMs)
+		: m_thread{[this, timeoutMs](){
+			auto lock = std::unique_lock(m_mutex);
+
+			if(!m_cv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [this](){ return m_done; }))
+			{
+				std::cerr << "\nTest timed out after " << timeoutMs << " milliseconds\n";
+				std::cout.flush();
+				std::cerr.flush();
+				std::abort();
+			}
+		}}
+	{
+	}
+
+	~TimeoutChecker()
+	{
+		{
+			auto lock = std::lock_guard(m_mutex);
+			m_done = true;
+			m_cv.notify_all();
+		}
+
+		m_thread.join();
+	}
+
+private:
+	std::mutex              m_mutex;
+	std::condition_variable m_cv;
+	bool                    m_done = false;
+	std::thread             m_thread;
+};
+
+/*
+ * TestExecutor
+ */
+
 class TestExecutor{
 public:
 	TestExecutor() = default;
@@ -361,6 +440,7 @@ public:
 
 		try
 		{
+			auto timeoutChecker = TimeoutChecker(120000); // TODO: Make timeout configurable
 			func();
 			passed = true;
 		}
@@ -385,6 +465,10 @@ public:
 private:
 	TestResults m_results;
 };
+
+/*
+ * TestSuite
+ */
 
 template<typename ...Args>
 struct TestCase{
@@ -481,6 +565,10 @@ private:
 	std::source_location  m_location;
 	std::vector<TestCase> m_testCases;
 };
+
+/*
+ * TestApp
+ */
 
 class TestApp{
 public:
