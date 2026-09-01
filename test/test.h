@@ -133,16 +133,10 @@ inline auto toString(std::string_view str, char quote = '"') -> std::string
 			result += "\\r";
 			break;
 		case '\"':
-			if(c == quote)
-				result += "\\\"";
-			else
-				result += c;
-			break;
 		case '\'':
 			if(c == quote)
-				result += "\\'";
-			else
-				result += c;
+				result += "\\\"";
+			result += c;
 			break;
 		case '\\':
 			result += "\\\\";
