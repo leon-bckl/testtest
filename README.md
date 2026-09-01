@@ -4,6 +4,20 @@
 #include <ctime>
 #include <test/test.h>
 
+struct CustomType{
+  int i;
+  auto operator<=>(const CustomType&) const -> bool = default;
+};
+
+// Specialize the test::toString function to get readable output for custom types.
+namespace test{
+template<>
+auto toString<CustomType>(const CustomType& v) -> std::string
+{
+  return "Custom type value: " + std::to_string(v.i);
+}
+} // namespace test
+
 int main(int argc, char** argv)
 {
   auto app = test::TestApp();
